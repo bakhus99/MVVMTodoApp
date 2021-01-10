@@ -9,11 +9,16 @@ import androidx.appcompat.widget.SearchView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.snackbar.Snackbar
 import com.student.mvvmtodoapp.R
 import com.student.mvvmtodoapp.data.SortOrder
 import com.student.mvvmtodoapp.data.Task
 import com.student.mvvmtodoapp.databinding.FragmentTasksBinding
+import com.student.mvvmtodoapp.util.exhaustive
 import com.student.mvvmtodoapp.util.onQueryTextChanged
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collect
@@ -37,10 +42,53 @@ class TaskFragment : Fragment(R.layout.fragment_tasks), TasksAdapter.OnItemClick
                 layoutManager = LinearLayoutManager(requireContext())
                 setHasFixedSize(true)
             }
+            ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+                0,
+                ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT
+            ) {
+                override fun onMove(
+                    recyclerView: RecyclerView,
+                    viewHolder: RecyclerView.ViewHolder,
+                    target: RecyclerView.ViewHolder
+                ): Boolean {
+                    return false
+                }
+
+                override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
+                    val task = taskAdapter.currentList[viewHolder.adapterPosition]
+                    viewModel.onTaskSwiped(task)
+                }
+            }).attachToRecyclerView(rvTasks)
+
+            fabAddTask.setOnClickListener {
+                viewModel.onAddNewTaskClick()
+            }
         }
         viewModel.tasks.observe(viewLifecycleOwner) {
             taskAdapter.submitList(it)
         }
+
+        viewLifecycleOwner.lifecycleScope.launchWhenStarted {
+            viewModel.taskEvent.collect { event ->
+                when (event) {
+                    is TasksViewModel.TaskEvent.ShowUndoDeleteTaskMessage -> {
+                        Snackbar.make(requireView(), "Task Deleted", Snackbar.LENGTH_LONG)
+                            .setAction("UNDO") {
+                                viewModel.onUndoDeleteClick(event.task)
+                            }.show()
+                    }
+                    TasksViewModel.TaskEvent.NavigateToTaskScreen -> {
+                        val action = TaskFragmentDirections.actionTaskFragmentToAddEditTaskFragment(null,"New Task")
+                        findNavController().navigate(action)
+                    }
+                    is TasksViewModel.TaskEvent.NavigateToEditTaskScreen -> {
+                        val action = TaskFragmentDirections.actionTaskFragmentToAddEditTaskFragment(event.task,"Edit Task")
+                        findNavController().navigate(action)
+                    }
+                }.exhaustive
+            }
+        }
+
         setHasOptionsMenu(true)
     }
 
