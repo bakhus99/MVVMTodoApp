@@ -4,8 +4,14 @@ import androidx.hilt.Assisted
 import androidx.hilt.lifecycle.ViewModelInject
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.student.mvvmtodoapp.data.Task
 import com.student.mvvmtodoapp.data.TaskDao
+import com.student.mvvmtodoapp.ui.ADD_TASK_RESULT_OK
+import com.student.mvvmtodoapp.ui.EDIT_TASK_RESULT_OK
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 
 class AddEditTaskViewModel @ViewModelInject constructor(
     private val taskDao: TaskDao,
@@ -25,4 +31,41 @@ class AddEditTaskViewModel @ViewModelInject constructor(
             field = value
             state.set("taskImportance",value)
         }
+
+    private val addEditTaskEventChannel = Channel<AddEditEvent>()
+    val addEditEvent = addEditTaskEventChannel.receiveAsFlow()
+
+    fun onSaveClick(){
+        if (taskName.isBlank()) {
+            showInvalidInputMessage("Name cannot be empty")
+            return
+        }
+
+        if (task != null) {
+            val updatedTask = task.copy(name = taskName, important = taskImportance)
+            updateTask(updatedTask)
+        } else {
+            val newTask = Task(name = taskName,important = taskImportance)
+            createTask(newTask)
+        }
+    }
+
+    private fun showInvalidInputMessage(text:String) = viewModelScope.launch {
+        addEditTaskEventChannel.send(AddEditEvent.ShowInvalidInputMessage(text))
+    }
+
+    private fun createTask(task: Task) = viewModelScope.launch {
+        taskDao.insert(task)
+        addEditTaskEventChannel.send(AddEditEvent.NavigateBackWithResult(ADD_TASK_RESULT_OK))
+    }
+
+    private fun updateTask(task: Task) = viewModelScope.launch {
+        taskDao.update(task)
+        addEditTaskEventChannel.send(AddEditEvent.NavigateBackWithResult(EDIT_TASK_RESULT_OK))
+    }
+
+    sealed class AddEditEvent{
+        data class ShowInvalidInputMessage(val msg: String): AddEditEvent()
+        data class NavigateBackWithResult(val result:Int): AddEditEvent()
+    }
 }
